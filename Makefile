@@ -2,7 +2,6 @@ ifdef DEBUG
     _DEBUG := -DDEBUG
 endif
 CFLAGS := -std=gnu18 -g -Wall -Wextra -pedantic -Os -flto $(_DEBUG)
-LDFLAGS := -Wl,--gc-sections
 ifneq ($(findstring clang,$(CC)),)
     # lld is required with clang to support flto-compiled object files (bitcode)
 	LDFLAGS += -fuse-ld=lld
@@ -14,10 +13,14 @@ ifeq ($(OS),Windows_NT)
     CONF := Mingw
     LDFLAGS += -lws2_32 -static
     target := $(target).exe
+else ifeq ($(shell uname), Darwin)
+    SUFFIX := _macos
+    CONF := Unix
+    LDFLAGS += -dead_strip -pthread
 else
     SUFFIX := _linux
     CONF := Unix
-    LDFLAGS += -pthread
+    LDFLAGS += -Wl,--gc-sections -pthread
 endif
 
 all: $(target)
@@ -35,6 +38,9 @@ ifeq ($(wildcard ./.prerequisites_built$(SUFFIX)),)
 	mv pcre2/build/libpcre2-8.a libs/libpcre2$(SUFFIX).a
 
 	$(MAKE) -C BearSSL CONF=$(CONF)
+	if [ "$(shell uname)" = "Darwin" ]; then \
+		mv -f libs/libbearssl_linux.a libs/libbearssl$(SUFFIX).a; \
+	fi
 
 	cmake --build BLAKE3/c/build > /dev/null 2>&1 || (mkdir -p BLAKE3/c/build && rm -rf BLAKE3/c/build/* && \
 	cmake -S BLAKE3/c -B BLAKE3/c/build -G Ninja -DCMAKE_BUILD_TYPE=Release && \
@@ -57,7 +63,6 @@ sha/sha256-x86.o: CFLAGS += -O3 -msha -msse4
 
 $(target): $(object_files) | .prerequisites_built$(SUFFIX)
 	$(CC) $(CFLAGS) $^ $(lib_files) $(LDFLAGS) -o $@
-
 
 clean:
 	rm -f $(target) $(object_files)
